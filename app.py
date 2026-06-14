@@ -86,6 +86,7 @@ def load_data():
     # Calculate Age
     if 'DOB' in df.columns:
         df['Age'] = pd.to_datetime('today').year - pd.to_datetime(df['DOB'], errors='coerce').dt.year
+        df.loc[(df['Age'] < 18) | (df['Age'] > 100), 'Age'] = pd.NA
         
     # Clean Gender
     if 'Gender' not in df.columns:
@@ -552,7 +553,7 @@ if not selected_trainers.empty:
                     for t in topic_list:
                         if t and t.lower() not in ['nan', 'n/a']: 
                             pdf.set_x(85)
-                            pdf.cell(0, 6, f"  •  {t}", ln=1)
+                            pdf.cell(0, 6, f"  *  {t}", ln=1)
                     pdf.ln(8)
                     
                     # Industries Served
