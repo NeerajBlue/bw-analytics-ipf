@@ -300,7 +300,12 @@ selected_trainers = edited_df[edited_df["Select"]].drop(columns=["Select"])
 
 if not selected_trainers.empty:
     st.success(f"✅ {len(selected_trainers)} trainers selected for Shortlist!")
-    csv = selected_trainers.to_csv(index=False).encode('utf-8')
+    
+    # Export only the exact columns needed for the Project Deployments Sheet
+    export_cols = ['Trainer ID', 'Name', 'Location', 'Contact Number', 'Email ID']
+    export_df = selected_trainers[export_cols] if all(c in selected_trainers.columns for c in export_cols) else selected_trainers
+    
+    csv = export_df.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Export Shortlist for Deployment Tracker",
         data=csv,
