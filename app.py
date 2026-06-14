@@ -89,13 +89,6 @@ except Exception as e:
 st.sidebar.image("https://blue-wisdom-od.netlify.app/images/1.png", width=200)
 st.sidebar.title("Search Filters")
 
-# Status filter
-if 'Status (Active/Inactive)' in df.columns:
-    all_statuses = ["All"] + [s for s in df['Status (Active/Inactive)'].unique() if pd.notnull(s) and str(s).strip() != '']
-    selected_status = st.sidebar.selectbox("Trainer Status", all_statuses)
-else:
-    selected_status = "All"
-
 # State filter
 if 'State' in df.columns:
     def is_valid_state(s):
@@ -142,9 +135,6 @@ search_kw = st.sidebar.text_input("Search (Name, Topics, Skills)")
 # --- FILTER DATA ---
 filtered_df = df.copy()
 
-if selected_status != "All" and 'Status (Active/Inactive)' in filtered_df.columns:
-    filtered_df = filtered_df[filtered_df['Status (Active/Inactive)'] == selected_status]
-
 if selected_state != "All" and 'State' in filtered_df.columns:
     filtered_df = filtered_df[filtered_df['State'] == selected_state]
 
@@ -169,7 +159,7 @@ st.title("📊 Trainer Search & Analytics Dashboard")
 st.markdown("---")
 
 # --- KPI METRICS ---
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 with col1:
     st.markdown(f'<div class="metric-card"><div class="metric-value">{len(filtered_df)}</div><div class="metric-label">Total Trainers</div></div>', unsafe_allow_html=True)
 with col2:
@@ -180,12 +170,6 @@ with col2:
         val = "0.0"
     st.markdown(f'<div class="metric-card" style="background-color: #0073e6;"><div class="metric-value">{val}</div><div class="metric-label">Avg Experience (Yrs)</div></div>', unsafe_allow_html=True)
 with col3:
-    if 'Status (Active/Inactive)' in filtered_df.columns:
-        active = len(filtered_df[filtered_df['Status (Active/Inactive)'] == 'Active'])
-    else:
-        active = len(filtered_df)
-    st.markdown(f'<div class="metric-card" style="background-color: #28a745;"><div class="metric-value">{active}</div><div class="metric-label">Active Trainers</div></div>', unsafe_allow_html=True)
-with col4:
     if 'State' in filtered_df.columns:
         states_count = filtered_df['State'].nunique()
     else:
@@ -240,8 +224,33 @@ with expander:
         else:
             st.error("SWOT THREAT: You have zero trainers in your database matching this profile! You need to recruit/source immediately.")
 
-# --- DATA TABLE ---
+# --- PROJECT SHORTLISTING & DATA TABLE ---
 st.markdown("---")
-st.subheader("📄 Filtered Trainer Roster")
-display_cols = [c for c in ['Name', 'Location', 'Contact Number', 'Email ID', 'Years of Experience', 'Core Subjects/Topics', 'Status (Active/Inactive)'] if c in filtered_df.columns]
-st.dataframe(filtered_df[display_cols], use_container_width=True, height=400)
+st.subheader("📄 Project Shortlisting & Trainer Roster")
+st.write("Select trainers below to export them for your project deployments.")
+
+display_cols = [c for c in ['Trainer ID', 'Name', 'Location', 'Contact Number', 'Email ID', 'Years of Experience', 'Core Subjects/Topics', 'Status (Active/Inactive)'] if c in filtered_df.columns]
+edit_df = filtered_df[display_cols].copy()
+edit_df.insert(0, "Select", False)
+
+edited_df = st.data_editor(
+    edit_df,
+    hide_index=True,
+    column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)},
+    disabled=display_cols,
+    use_container_width=True,
+    height=400
+)
+
+selected_trainers = edited_df[edited_df["Select"]].drop(columns=["Select"])
+
+if not selected_trainers.empty:
+    st.success(f"✅ {len(selected_trainers)} trainers selected for Shortlist!")
+    csv = selected_trainers.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Export Shortlist for Deployment Tracker",
+        data=csv,
+        file_name='project_shortlist.csv',
+        mime='text/csv',
+        type="primary"
+    )
