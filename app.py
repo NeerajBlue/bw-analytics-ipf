@@ -60,6 +60,22 @@ def load_data():
     # Clean experience
     if 'Years of Experience' in df.columns:
         df['Years of Experience'] = pd.to_numeric(df['Years of Experience'], errors='coerce').fillna(0)
+        
+    # Extract City from Location
+    def extract_city(loc):
+        parts = str(loc).split(',')
+        return parts[0].strip() if len(parts) > 0 else 'Unknown'
+        
+    if 'City' not in df.columns and 'Location' in df.columns:
+        df['City'] = df['Location'].apply(extract_city)
+        
+    # Calculate Age
+    if 'DOB' in df.columns:
+        df['Age'] = pd.to_datetime('today').year - pd.to_datetime(df['DOB'], errors='coerce').dt.year
+        
+    # Clean Gender
+    if 'Gender' not in df.columns:
+        df['Gender'] = 'Not Specified'
     
     return df
 
@@ -82,32 +98,68 @@ else:
 
 # State filter
 if 'State' in df.columns:
-    # Filter out garbage (WhatsApp script logs, empty strings, nan)
     def is_valid_state(s):
         s_str = str(s).strip()
         if not s_str or s_str.lower() in ['nan', 'unknown', 'none']: return False
         if 'sent via script' in s_str.lower(): return False
         if 'am - ' in s_str.lower() or 'pm - ' in s_str.lower(): return False
         return True
-        
     states = [s for s in df['State'].unique() if is_valid_state(s)]
     selected_state = st.sidebar.selectbox("Location (State)", ["All"] + sorted(states))
 else:
     selected_state = "All"
 
-# Keyword Search
-search_kw = st.sidebar.text_input("Keyword Search (Name, Skill, Topic)")
+# City filter
+if 'City' in df.columns:
+    cities = [c for c in df['City'].unique() if pd.notnull(c) and str(c).strip() != '' and str(c).lower() != 'nan']
+    selected_city = st.sidebar.selectbox("Location (City)", ["All"] + sorted(cities))
+else:
+    selected_city = "All"
+
+# Gender filter
+if 'Gender' in df.columns:
+    genders = [g for g in df['Gender'].unique() if pd.notnull(g) and str(g).strip() != '' and str(g).lower() != 'nan']
+    selected_gender = st.sidebar.selectbox("Gender", ["All"] + sorted(genders))
+else:
+    selected_gender = "All"
+
+# Age Range Filter
+if 'Age' in df.columns and not df['Age'].isna().all():
+    min_age = int(df['Age'].min(skipna=True))
+    max_age = int(df['Age'].max(skipna=True))
+    if min_age < max_age:
+        selected_age = st.sidebar.slider("Age Range", min_value=min_age, max_value=max_age, value=(min_age, max_age))
+    else:
+        selected_age = None
+else:
+    selected_age = None
+
+# Keyword Search (Topics, Skills, Name)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Keyword & Topics")
+search_kw = st.sidebar.text_input("Search (Name, Topics, Skills)")
 
 # --- FILTER DATA ---
 filtered_df = df.copy()
+
 if selected_status != "All" and 'Status (Active/Inactive)' in filtered_df.columns:
     filtered_df = filtered_df[filtered_df['Status (Active/Inactive)'] == selected_status]
+
 if selected_state != "All" and 'State' in filtered_df.columns:
     filtered_df = filtered_df[filtered_df['State'] == selected_state]
+
+if selected_city != "All" and 'City' in filtered_df.columns:
+    filtered_df = filtered_df[filtered_df['City'] == selected_city]
+
+if selected_gender != "All" and 'Gender' in filtered_df.columns:
+    filtered_df = filtered_df[filtered_df['Gender'] == selected_gender]
+
+if selected_age is not None and 'Age' in filtered_df.columns:
+    filtered_df = filtered_df[(filtered_df['Age'].isna()) | ((filtered_df['Age'] >= selected_age[0]) & (filtered_df['Age'] <= selected_age[1]))]
+
 if search_kw:
-    # Search across multiple columns safely
     mask = pd.Series([False]*len(filtered_df), index=filtered_df.index)
-    for col in ['Name', 'Core Subjects/Topics', 'Location']:
+    for col in ['Name', 'Core Subjects/Topics']:
         if col in filtered_df.columns:
             mask = mask | filtered_df[col].astype(str).str.contains(search_kw, case=False, na=False)
     filtered_df = filtered_df[mask]
