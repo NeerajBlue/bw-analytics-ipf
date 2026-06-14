@@ -3,6 +3,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+from fpdf import FPDF
+import base64
 
 st.set_page_config(page_title="BW Executive Analytics", layout="wide", initial_sidebar_state="expanded")
 
@@ -76,6 +78,19 @@ def load_data():
     # Clean Gender
     if 'Gender' not in df.columns:
         df['Gender'] = 'Not Specified'
+        
+    # --- AUTO-DEDUPLICATION ---
+    # Keep the most recent entry (last row) for each trainer based on Phone or Email
+    if 'Contact Number' in df.columns:
+        # Clean the phone number for accurate matching (remove spaces, +91, hyphens)
+        df['Clean_Phone'] = df['Contact Number'].astype(str).str.replace(r'[\s\-\+]', '', regex=True)
+        df['Clean_Phone'] = df['Clean_Phone'].str.replace(r'^91', '', regex=True) # Remove leading 91
+        df = df.drop_duplicates(subset=['Clean_Phone'], keep='last')
+        df = df.drop(columns=['Clean_Phone'])
+    elif 'Email ID' in df.columns:
+        df['Clean_Email'] = df['Email ID'].astype(str).str.lower().str.strip()
+        df = df.drop_duplicates(subset=['Clean_Email'], keep='last')
+        df = df.drop(columns=['Clean_Email'])
     
     return df
 
@@ -306,10 +321,77 @@ if not selected_trainers.empty:
     export_df = selected_trainers[export_cols] if all(c in selected_trainers.columns for c in export_cols) else selected_trainers
     
     csv = export_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Export Shortlist for Deployment Tracker",
-        data=csv,
-        file_name='project_shortlist.csv',
-        mime='text/csv',
-        type="primary"
-    )
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            label="📥 Export Shortlist (CSV)",
+            data=csv,
+            file_name='project_shortlist.csv',
+            mime='text/csv',
+            type="primary"
+        )
+        
+    with col2:
+        # PDF GENERATION LOGIC
+        if st.button("📄 Generate Client Pitch Profiles (PDF)"):
+            with st.spinner("Generating Branded PDFs..."):
+                pdf = FPDF()
+                pdf.set_auto_page_break(auto=True, margin=15)
+                
+                for index, row in selected_trainers.iterrows():
+                    pdf.add_page()
+                    
+                    # Blue Wisdom Header Bar
+                    pdf.set_fill_color(0, 64, 128) # Dark Blue
+                    pdf.rect(0, 0, 210, 30, 'F')
+                    
+                    pdf.set_font("Arial", 'B', 24)
+                    pdf.set_text_color(255, 255, 255)
+                    pdf.cell(0, 10, "BLUE WISDOM", ln=1, align="C")
+                    pdf.set_font("Arial", '', 10)
+                    pdf.set_text_color(138, 180, 248)
+                    pdf.cell(0, 5, "EXECUTIVE TRAINER PROFILE", ln=1, align="C")
+                    
+                    pdf.ln(20) # Space after header
+                    
+                    # Trainer Name
+                    name = str(row.get('Name', 'Trainer Profile')).encode('latin-1', 'replace').decode('latin-1')
+                    pdf.set_font("Arial", 'B', 20)
+                    pdf.set_text_color(0, 51, 102)
+                    pdf.cell(0, 10, name.upper(), ln=1, align="L")
+                    
+                    # Location & Experience Subtitle
+                    loc = str(row.get('Location', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    exp = str(row.get('Years of Experience', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    pdf.set_font("Arial", 'I', 12)
+                    pdf.set_text_color(100, 100, 100)
+                    pdf.cell(0, 8, f"Location: {loc}  |  Experience: {exp} Years", ln=1, align="L")
+                    
+                    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+                    pdf.ln(10)
+                    
+                    # Core Expertise Area
+                    pdf.set_font("Arial", 'B', 14)
+                    pdf.set_text_color(0, 51, 102)
+                    pdf.cell(0, 10, "CORE EXPERTISE & TOPICS:", ln=1)
+                    
+                    pdf.set_font("Arial", '', 11)
+                    pdf.set_text_color(50, 50, 50)
+                    topics = str(row.get('Core Subjects/Topics', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    pdf.multi_cell(0, 8, topics)
+                    
+                    pdf.ln(15)
+                    
+                    # Contact placeholder for client
+                    pdf.set_font("Arial", 'I', 10)
+                    pdf.set_text_color(150, 150, 150)
+                    pdf.cell(0, 10, "To book this trainer, please contact Blue Wisdom Pvt Ltd.", ln=1, align="C")
+                    
+                # Output PDF to bytes
+                pdf_bytes = pdf.output(dest='S').encode('latin1')
+                
+                # Create a download link using base64
+                b64 = base64.b64encode(pdf_bytes).decode()
+                href = f'<a href="data:application/pdf;base64,{b64}" download="BW_Trainer_Profiles.pdf" style="display: inline-block; padding: 10px 20px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">✅ Click Here to Download PDF</a>'
+                st.markdown(href, unsafe_allow_html=True)
