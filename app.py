@@ -75,14 +75,22 @@ st.sidebar.title("Search Filters")
 
 # Status filter
 if 'Status (Active/Inactive)' in df.columns:
-    all_statuses = ["All"] + list(df['Status (Active/Inactive)'].unique())
+    all_statuses = ["All"] + [s for s in df['Status (Active/Inactive)'].unique() if pd.notnull(s) and str(s).strip() != '']
     selected_status = st.sidebar.selectbox("Trainer Status", all_statuses)
 else:
     selected_status = "All"
 
 # State filter
 if 'State' in df.columns:
-    states = [s for s in df['State'].unique() if s]
+    # Filter out garbage (WhatsApp script logs, empty strings, nan)
+    def is_valid_state(s):
+        s_str = str(s).strip()
+        if not s_str or s_str.lower() in ['nan', 'unknown', 'none']: return False
+        if 'sent via script' in s_str.lower(): return False
+        if 'am - ' in s_str.lower() or 'pm - ' in s_str.lower(): return False
+        return True
+        
+    states = [s for s in df['State'].unique() if is_valid_state(s)]
     selected_state = st.sidebar.selectbox("Location (State)", ["All"] + sorted(states))
 else:
     selected_state = "All"
