@@ -389,7 +389,7 @@ if not selected_trainers.empty:
                     pdf.cell(0, 10, "To book this trainer, please contact Blue Wisdom Pvt Ltd.", ln=1, align="C")
                     
                 # Output PDF to bytes
-                pdf_bytes = pdf.output(dest='S').encode('latin1')
+                pdf_bytes = bytes(pdf.output())
                 
                 # Create a download link using base64
                 b64 = base64.b64encode(pdf_bytes).decode()
