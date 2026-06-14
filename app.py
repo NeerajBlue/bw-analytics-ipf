@@ -49,6 +49,9 @@ def load_data():
         # Fallback to local file if the Google Sheet is set to "Private"
         df = pd.read_excel('Looker_Studio_Dataset.xlsx')
         
+    if 'Name' in df.columns:
+        df['Name'] = df['Name'].astype(str).str.replace(r'(?i)\s*not provided', '', regex=True).str.strip()
+        
     def extract_state(loc):
         parts = str(loc).split(',')
         return parts[-1].strip() if len(parts) > 1 else 'Unknown'
@@ -343,12 +346,34 @@ if not selected_trainers.empty:
                 logo_path = None
                 try:
                     import requests
+                    from PIL import Image, ImageFilter
+                    from io import BytesIO
                     r = requests.get("https://blue-wisdom-od.netlify.app/images/1.png", timeout=5)
                     if r.status_code == 200:
+                        img = Image.open(BytesIO(r.content)).convert("RGBA")
+                        data = img.getdata()
+                        new_data = []
+                        for item in data:
+                            if item[0] > 220 and item[1] > 220 and item[2] > 220:
+                                new_data.append((255, 255, 255, 0))
+                            else:
+                                new_data.append(item)
+                        img.putdata(new_data)
+                        
+                        shadow = Image.new('RGBA', img.size, (0, 0, 0, 0))
+                        shadow_data = []
+                        for item in new_data:
+                            if item[3] > 0:
+                                shadow_data.append((255, 255, 255, 255))
+                            else:
+                                shadow_data.append((0, 0, 0, 0))
+                        shadow.putdata(shadow_data)
+                        shadow = shadow.filter(ImageFilter.GaussianBlur(radius=3))
+                        
+                        final_img = Image.alpha_composite(shadow, img)
                         import tempfile
                         logo_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-                        logo_file.write(r.content)
-                        logo_file.close()
+                        final_img.save(logo_file.name, 'PNG')
                         logo_path = logo_file.name
                 except: pass
 
