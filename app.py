@@ -42,11 +42,20 @@ st.markdown("""
 @st.cache_data(ttl=600) # Cache for 10 minutes to prevent overwhelming Google Sheets
 def load_data():
     try:
-        # Try fetching LIVE data from Google Sheets first!
+        df = pd.read_excel('Looker_Studio_Dataset.xlsx')
+        
+        # Load the newly public IPF sheet for the rich data
         url = 'https://docs.google.com/spreadsheets/d/1oJKsU2IOrw8mu4xvx0MxBJ9aHB8omewvINjBq7-HkNc/export?format=xlsx'
-        df = pd.read_excel(url, sheet_name='Trainers Database')
+        ipf_df = pd.read_excel(url, sheet_name='IPF')
+        
+        # Merge them based on Email
+        ipf_df['Email_clean'] = ipf_df['Email Address'].astype(str).str.lower().str.strip()
+        ipf_df = ipf_df.drop_duplicates(subset=['Email_clean'], keep='last')
+        
+        df['Email_Lower'] = df['Email ID'].astype(str).str.lower().str.strip()
+        df = pd.merge(df, ipf_df, left_on='Email_Lower', right_on='Email_clean', how='left')
+        df.drop(columns=['Email_Lower', 'Email_clean'], inplace=True)
     except Exception:
-        # Fallback to local file if the Google Sheet is set to "Private"
         df = pd.read_excel('Looker_Studio_Dataset.xlsx')
         
     if 'Name' in df.columns:
@@ -346,34 +355,12 @@ if not selected_trainers.empty:
                 logo_path = None
                 try:
                     import requests
-                    from PIL import Image, ImageFilter
-                    from io import BytesIO
                     r = requests.get("https://blue-wisdom-od.netlify.app/images/1.png", timeout=5)
                     if r.status_code == 200:
-                        img = Image.open(BytesIO(r.content)).convert("RGBA")
-                        data = img.getdata()
-                        new_data = []
-                        for item in data:
-                            if item[0] > 220 and item[1] > 220 and item[2] > 220:
-                                new_data.append((255, 255, 255, 0))
-                            else:
-                                new_data.append(item)
-                        img.putdata(new_data)
-                        
-                        shadow = Image.new('RGBA', img.size, (0, 0, 0, 0))
-                        shadow_data = []
-                        for item in new_data:
-                            if item[3] > 0:
-                                shadow_data.append((255, 255, 255, 255))
-                            else:
-                                shadow_data.append((0, 0, 0, 0))
-                        shadow.putdata(shadow_data)
-                        shadow = shadow.filter(ImageFilter.GaussianBlur(radius=3))
-                        
-                        final_img = Image.alpha_composite(shadow, img)
                         import tempfile
                         logo_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-                        final_img.save(logo_file.name, 'PNG')
+                        logo_file.write(r.content)
+                        logo_file.close()
                         logo_path = logo_file.name
                 except: pass
 
@@ -440,89 +427,156 @@ if not selected_trainers.empty:
                 
                 for index, row in selected_trainers.iterrows():
                     pdf.add_page()
+                    
                     name = str(row.get('Name', 'Trainer Profile')).encode('latin-1', 'replace').decode('latin-1')
                     loc = str(row.get('Location', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
-                    exp = str(row.get('Years of Experience', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
-                    topics = str(row.get('Core Subjects/Topics', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    exp = str(row.get('Years of Experience', row.get('Total Training / Consulting Experience (in years)', 'N/A'))).encode('latin-1', 'replace').decode('latin-1')
+                    topics = str(row.get('Core Subjects/Topics', row.get('Core Expertise Areas', 'N/A'))).encode('latin-1', 'replace').decode('latin-1')
                     gender = str(row.get('Gender', 'Not Specified'))
                     
-                    # Try to find Photo Column
+                    # IPF Extra Data
+                    qual = str(row.get('Highest Qualification', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    delivery = str(row.get('Preferred Training Delivery Mode', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    edu = str(row.get('Educational Institution(s)', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    category = str(row.get('Primary Consultant Category', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    linkedin = row.get('LinkedIn Profile / Professional Profile Link', '')
+                    industries = str(row.get('Industries Served', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    langs = str(row.get('Languages You Can Deliver In', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    
+                    dob_val = row.get('Date of Birth', 'N/A')
+                    dob = str(dob_val).split(' ')[0] if dob_val and str(dob_val) not in ['nan', 'NaT'] else 'N/A'
+                    
                     photo_url = row.get('Upload profile photo', row.get('Photo', ''))
-                    # Try to find Profile Link Column
                     profile_link = row.get("Trainer's Profile / CV", row.get('Upload CV / Resume', ''))
                     
                     img_path = get_drive_image(photo_url, gender, name)
                     
-                    # Blue Wisdom Header Bar
-                    pdf.set_fill_color(0, 64, 128) # Dark Blue
-                    pdf.rect(0, 0, 210, 30, 'F')
+                    # --- Premium Corporate Stationery Header ---
+                    pdf.set_fill_color(0, 51, 102) # Dark Blue
+                    pdf.rect(0, 0, 210, 4, 'F')
                     
-                    # Logo
                     if logo_path:
-                        pdf.image(logo_path, x=170, y=5, w=30)
+                        pdf.image(logo_path, x=155, y=8, w=45)
                         
-                    pdf.set_font("Arial", 'B', 24)
-                    pdf.set_text_color(255, 255, 255)
-                    pdf.cell(0, 10, "BLUE WISDOM", ln=1, align="C")
-                    pdf.set_font("Arial", '', 10)
-                    pdf.set_text_color(138, 180, 248)
-                    pdf.cell(0, 5, "EXECUTIVE TRAINER PROFILE", ln=1, align="C")
-                    pdf.ln(15) 
-                    
-                    # Profile Image
-                    if img_path:
-                        pdf.image(img_path, x=15, y=35, w=40, h=40)
-                        
-                    # Name & Title
-                    pdf.set_xy(60, 35)
+                    pdf.set_y(12)
                     pdf.set_font("Arial", 'B', 22)
                     pdf.set_text_color(0, 51, 102)
+                    pdf.cell(0, 8, "BLUE WISDOM", ln=1, align="L")
+                    
+                    pdf.set_font("Arial", 'I', 11)
+                    pdf.set_text_color(120, 120, 120)
+                    pdf.cell(0, 6, "EXECUTIVE TRAINER PROFILE", ln=1, align="L")
+                    
+                    pdf.set_y(32)
+                    pdf.set_fill_color(200, 200, 200)
+                    pdf.rect(10, 32, 190, 0.5, 'F')
+                    
+                    # --- Two-Column Layout ---
+                    # Sidebar Background
+                    pdf.set_fill_color(240, 245, 250) # Light Ice Blue
+                    pdf.rect(0, 32.5, 75, 297, 'F')
+                    
+                    # ================= LEFT COLUMN =================
+                    if img_path:
+                        pdf.image(img_path, x=17, y=40, w=40, h=40)
+                        
+                    pdf.set_y(85)
+                    pdf.set_x(10)
+                    
+                    def add_sidebar_item(title, value):
+                        if str(value).lower() in ['nan', 'n/a', 'none', '']: return
+                        pdf.set_x(10)
+                        pdf.set_font("Arial", 'B', 10)
+                        pdf.set_text_color(0, 51, 102)
+                        pdf.cell(55, 6, title.upper(), ln=1, align="L")
+                        pdf.set_x(10)
+                        pdf.set_font("Arial", '', 10)
+                        pdf.set_text_color(60, 60, 60)
+                        pdf.multi_cell(55, 5, str(value))
+                        pdf.ln(4)
+                        
+                    add_sidebar_item("Consultant Category", category)
+                    add_sidebar_item("Location", loc)
+                    add_sidebar_item("Experience", f"{exp} Years")
+                    add_sidebar_item("Qualification", qual)
+                    add_sidebar_item("Education", edu)
+                    add_sidebar_item("Delivery Mode", delivery)
+                    add_sidebar_item("Languages", langs)
+                    if dob != 'N/A': add_sidebar_item("DOB", dob)
+                    
+                    if linkedin and str(linkedin).startswith('http'):
+                        pdf.set_x(10)
+                        pdf.set_font("Arial", 'B', 10)
+                        pdf.set_text_color(0, 102, 204)
+                        pdf.cell(55, 8, "LinkedIn Profile", link=linkedin, ln=1, align="L")
+                    
+                    # ================= RIGHT COLUMN =================
+                    # Name & Title
+                    pdf.set_xy(85, 40)
+                    pdf.set_font("Arial", 'B', 24)
+                    pdf.set_text_color(0, 0, 0)
                     pdf.cell(0, 10, name.upper(), ln=1, align="L")
                     
-                    pdf.set_x(60)
+                    pdf.set_x(85)
                     pdf.set_font("Arial", 'B', 12)
-                    pdf.set_text_color(80, 80, 80)
-                    pdf.cell(0, 8, "EXECUTIVE TRAINER & CONSULTANT", ln=1, align="L")
+                    pdf.set_text_color(0, 102, 204)
+                    pdf.cell(0, 6, "EXECUTIVE TRAINER & CONSULTANT", ln=1, align="L")
                     
-                    pdf.set_x(60)
-                    pdf.set_font("Arial", '', 11)
-                    pdf.set_text_color(100, 100, 100)
-                    pdf.cell(0, 6, f"Location: {loc}   |   Experience: {exp} Years", ln=1, align="L")
-                    
-                    pdf.line(10, 80, 200, 80)
-                    pdf.set_y(85)
+                    pdf.set_y(60)
+                    pdf.set_fill_color(0, 51, 102)
+                    pdf.rect(85, 60, 115, 0.5, 'F')
+                    pdf.set_y(65)
                     
                     # AI Executive Summary
-                    pdf.set_font("Arial", 'B', 14)
+                    pdf.set_x(85)
+                    pdf.set_font("Arial", 'B', 13)
                     pdf.set_text_color(0, 51, 102)
-                    pdf.cell(0, 10, "EXECUTIVE SUMMARY", ln=1)
+                    pdf.cell(0, 8, "EXECUTIVE SUMMARY", ln=1)
                     
                     ai_summary = generate_ai_summary(name, exp, topics).encode('latin-1', 'replace').decode('latin-1')
+                    pdf.set_x(85)
                     pdf.set_font("Arial", '', 11)
-                    pdf.set_text_color(60, 60, 60)
-                    pdf.multi_cell(0, 6, ai_summary)
+                    pdf.set_text_color(50, 50, 50)
+                    pdf.multi_cell(115, 6, ai_summary)
                     pdf.ln(8)
                     
                     # Core Expertise Area
-                    pdf.set_font("Arial", 'B', 14)
+                    pdf.set_x(85)
+                    pdf.set_font("Arial", 'B', 13)
                     pdf.set_text_color(0, 51, 102)
-                    pdf.cell(0, 10, "CORE EXPERTISE & TRAINING TOPICS", ln=1)
+                    pdf.cell(0, 8, "CORE EXPERTISE & TRAINING TOPICS", ln=1)
                     
                     pdf.set_font("Arial", '', 11)
-                    pdf.set_text_color(50, 50, 50)
-                    # Convert commas to bullet points
+                    pdf.set_text_color(60, 60, 60)
                     topic_list = [t.strip() for t in topics.split(',')]
                     for t in topic_list:
-                        if t: pdf.cell(0, 6, f"  *  {t}", ln=1)
-                    pdf.ln(10)
+                        if t and t.lower() not in ['nan', 'n/a']: 
+                            pdf.set_x(85)
+                            pdf.cell(0, 6, f"  •  {t}", ln=1)
+                    pdf.ln(8)
                     
-                    # CV Link
+                    # Industries Served
+                    if industries.lower() not in ['nan', 'n/a', 'none', '']:
+                        pdf.set_x(85)
+                        pdf.set_font("Arial", 'B', 13)
+                        pdf.set_text_color(0, 51, 102)
+                        pdf.cell(0, 8, "INDUSTRIES SERVED", ln=1)
+                        pdf.set_font("Arial", '', 11)
+                        pdf.set_text_color(60, 60, 60)
+                        pdf.set_x(85)
+                        pdf.multi_cell(115, 6, industries)
+                    
+                    # --- Footer / CV Link ---
                     if profile_link and str(profile_link).startswith('http'):
-                        pdf.set_font("Arial", 'B', 12)
-                        pdf.set_text_color(0, 102, 204)
-                        pdf.cell(0, 10, "Click Here to View Detailed Profile / CV", link=profile_link, ln=1, align="C")
+                        pdf.set_y(260)
+                        pdf.set_x(85)
+                        pdf.set_font("Arial", 'B', 11)
+                        pdf.set_text_color(255, 255, 255)
+                        pdf.set_fill_color(0, 102, 204)
+                        pdf.cell(100, 10, "View Detailed Profile / CV", link=profile_link, ln=1, align="C", fill=True)
                     
-                    pdf.ln(10)
+                    pdf.set_y(275)
+                    pdf.set_x(85)
                     pdf.set_font("Arial", 'I', 9)
                     pdf.set_text_color(150, 150, 150)
                     pdf.cell(0, 10, "To book this trainer, please contact Blue Wisdom Pvt Ltd.", ln=1, align="C")
