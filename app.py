@@ -53,8 +53,13 @@ def load_data():
         ipf_df = ipf_df.drop_duplicates(subset=['Email_clean'], keep='last')
         
         df['Email_Lower'] = df['Email ID'].astype(str).str.lower().str.strip()
+        
+        # Prevent pandas from renaming overlapping columns to _x and _y
+        overlapping_cols = [c for c in ipf_df.columns if c in df.columns]
+        ipf_df = ipf_df.drop(columns=overlapping_cols)
+        
         df = pd.merge(df, ipf_df, left_on='Email_Lower', right_on='Email_clean', how='left')
-        df.drop(columns=['Email_Lower', 'Email_clean'], inplace=True)
+        df.drop(columns=['Email_Lower', 'Email_clean'], inplace=True, errors='ignore')
     except Exception:
         df = pd.read_excel('Looker_Studio_Dataset.xlsx')
         
