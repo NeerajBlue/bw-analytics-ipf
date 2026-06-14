@@ -4,3 +4,6 @@ plotly
 openpyxl
 scikit-learn
 fpdf2
+google-generativeai
+requests
+Pillow
