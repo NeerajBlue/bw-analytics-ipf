@@ -87,7 +87,12 @@ except Exception as e:
 
 # --- SIDEBAR FILTERS ---
 st.sidebar.image("https://blue-wisdom-od.netlify.app/images/1.png", width=200)
-st.sidebar.title("Search Filters")
+st.sidebar.markdown("---")
+st.sidebar.subheader("✨ AI Smart Search")
+smart_query = st.sidebar.text_area("Describe your ideal trainer:", placeholder="e.g. female POSH trainer in ahmedabad with 5+ years experience")
+
+st.sidebar.markdown("---")
+st.sidebar.title("Manual Filters")
 
 # State filter
 if 'State' in df.columns:
@@ -133,29 +138,78 @@ st.sidebar.subheader("Keyword & Topics")
 search_kw = st.sidebar.text_input("Search (Name, Topics, Skills)")
 
 # --- FILTER DATA ---
-filtered_df = df.copy()
+if smart_query:
+    import re
+    ai_df = df.copy()
+    
+    # 1. Parse Gender
+    if re.search(r'\b(female|woman|women|lady)\b', smart_query, re.IGNORECASE) and 'Gender' in ai_df.columns:
+        ai_df = ai_df[ai_df['Gender'].str.lower() == 'female']
+    elif re.search(r'\b(male|man|men|guy)\b', smart_query, re.IGNORECASE) and 'Gender' in ai_df.columns:
+        ai_df = ai_df[ai_df['Gender'].str.lower() == 'male']
+        
+    # 2. Parse Experience
+    exp_match = re.search(r'(\d+)\s*(?:\+|years?|yrs?)', smart_query, re.IGNORECASE)
+    if exp_match and 'Years of Experience' in ai_df.columns:
+        min_exp = int(exp_match.group(1))
+        ai_df = ai_df[ai_df['Years of Experience'] >= min_exp]
+        
+    # 3. Parse Location
+    if 'City' in ai_df.columns:
+        all_cities = ai_df['City'].dropna().unique()
+        for city in all_cities:
+            if str(city).lower() in smart_query.lower() and str(city).strip() != '':
+                ai_df = ai_df[ai_df['City'] == city]
+                break
+                
+    # 4. Semantic Topic Matching using scikit-learn
+    if 'Core Subjects/Topics' in ai_df.columns and len(ai_df) > 0:
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+            
+            topics = ai_df['Core Subjects/Topics'].fillna('').astype(str).tolist()
+            vectorizer = TfidfVectorizer(stop_words='english')
+            tfidf_matrix = vectorizer.fit_transform([smart_query] + topics)
+            scores = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:]).flatten()
+            
+            if scores.max() > 0:
+                ai_df['AI Match Score'] = scores
+                ai_df = ai_df[ai_df['AI Match Score'] > 0]
+                ai_df = ai_df.sort_values(by='AI Match Score', ascending=False)
+            
+            if len(ai_df) > 20: ai_df = ai_df.head(20)
+        except Exception as e:
+            pass
+            
+    filtered_df = ai_df
+else:
+    filtered_df = df.copy()
 
-if selected_state != "All" and 'State' in filtered_df.columns:
-    filtered_df = filtered_df[filtered_df['State'] == selected_state]
+    if selected_state != "All" and 'State' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['State'] == selected_state]
 
-if selected_city != "All" and 'City' in filtered_df.columns:
-    filtered_df = filtered_df[filtered_df['City'] == selected_city]
+    if selected_city != "All" and 'City' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['City'] == selected_city]
 
-if selected_gender != "All" and 'Gender' in filtered_df.columns:
-    filtered_df = filtered_df[filtered_df['Gender'] == selected_gender]
+    if selected_gender != "All" and 'Gender' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Gender'] == selected_gender]
 
-if selected_age is not None and 'Age' in filtered_df.columns:
-    filtered_df = filtered_df[(filtered_df['Age'].isna()) | ((filtered_df['Age'] >= selected_age[0]) & (filtered_df['Age'] <= selected_age[1]))]
+    if selected_age is not None and 'Age' in filtered_df.columns:
+        filtered_df = filtered_df[(filtered_df['Age'].isna()) | ((filtered_df['Age'] >= selected_age[0]) & (filtered_df['Age'] <= selected_age[1]))]
 
-if search_kw:
-    mask = pd.Series([False]*len(filtered_df), index=filtered_df.index)
-    for col in ['Name', 'Core Subjects/Topics']:
-        if col in filtered_df.columns:
-            mask = mask | filtered_df[col].astype(str).str.contains(search_kw, case=False, na=False)
-    filtered_df = filtered_df[mask]
+    if search_kw:
+        mask = pd.Series([False]*len(filtered_df), index=filtered_df.index)
+        for col in ['Name', 'Core Subjects/Topics']:
+            if col in filtered_df.columns:
+                mask = mask | filtered_df[col].astype(str).str.contains(search_kw, case=False, na=False)
+        filtered_df = filtered_df[mask]
 
 # --- MAIN DASHBOARD HEADER ---
-st.title("📊 Trainer Search & Analytics Dashboard")
+if smart_query:
+    st.title("🤖 AI Recommended Trainers")
+else:
+    st.title("📊 Trainer Search & Analytics Dashboard")
 st.markdown("---")
 
 # --- KPI METRICS ---
