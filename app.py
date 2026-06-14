@@ -335,56 +335,170 @@ if not selected_trainers.empty:
     with col2:
         # PDF GENERATION LOGIC
         if st.button("📄 Generate Client Pitch Profiles (PDF)"):
-            with st.spinner("Generating Branded PDFs..."):
+            with st.spinner("Generating Branded PDFs (This may take a moment for AI summaries)..."):
+                import google.generativeai as genai
+                genai.configure(api_key="AIzaSyCxaNQ1PAEgW1AnH4hkswxmAs-l6w25SLg")
+                
+                # Fetch BW Logo
+                logo_path = None
+                try:
+                    import requests
+                    r = requests.get("https://blue-wisdom-od.netlify.app/images/1.png", timeout=5)
+                    if r.status_code == 200:
+                        import tempfile
+                        logo_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+                        logo_file.write(r.content)
+                        logo_file.close()
+                        logo_path = logo_file.name
+                except: pass
+
+                def get_drive_image(url, gender, name):
+                    fallback_boy = "https://avatar.iran.liara.run/public/boy"
+                    fallback_girl = "https://avatar.iran.liara.run/public/girl"
+                    fallback_initials = f"https://ui-avatars.com/api/?name={name.replace(' ', '+')}&background=0D8ABC&color=fff&size=256"
+                    
+                    gender_str = str(gender).lower()
+                    if 'female' in gender_str or 'woman' in gender_str:
+                        fallback = fallback_girl
+                    elif 'male' in gender_str or 'man' in gender_str:
+                        fallback = fallback_boy
+                    else:
+                        fallback = fallback_initials
+                        
+                    def download_image(img_url):
+                        try:
+                            import requests
+                            from PIL import Image
+                            r = requests.get(img_url, timeout=10)
+                            if r.status_code == 200 and 'image' in r.headers.get('content-type', '').lower():
+                                import tempfile
+                                from io import BytesIO
+                                img = Image.open(BytesIO(r.content))
+                                # Crop to square
+                                width, height = img.size
+                                min_dim = min(width, height)
+                                left = (width - min_dim)/2
+                                top = (height - min_dim)/2
+                                right = (width + min_dim)/2
+                                bottom = (height + min_dim)/2
+                                img = img.crop((left, top, right, bottom))
+                                
+                                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+                                img.save(temp_file.name, 'PNG')
+                                return temp_file.name
+                            return None
+                        except:
+                            return None
+
+                    if url and isinstance(url, str) and 'drive.google.com' in url:
+                        file_id = None
+                        if 'id=' in url: file_id = url.split('id=')[1].split('&')[0]
+                        elif '/d/' in url: file_id = url.split('/d/')[1].split('/')[0]
+                        if file_id:
+                            img_path = download_image(f"https://drive.google.com/uc?id={file_id}")
+                            if img_path: return img_path
+                    return download_image(fallback)
+                    
+                def generate_ai_summary(name, exp, topics):
+                    if not topics or str(topics).strip().lower() in ['nan', 'n/a', 'none', '']:
+                        return f"{name} is an experienced professional with {exp} years of expertise."
+                    prompt = f"Write a highly professional, 3-sentence executive summary pitching a corporate trainer named {name}. They have {exp} years of experience. Their core expertise and topics are: {topics}. Do not use formatting like bold or italics. Keep it punchy, persuasive, and strictly corporate tone."
+                    try:
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        response = model.generate_content(prompt)
+                        return response.text.replace('\n', ' ').strip()
+                    except:
+                        return f"{name} is a highly seasoned corporate trainer with {exp} years of specialized experience in {topics}. They bring a wealth of practical knowledge and interactive methodologies to their sessions, ensuring maximum impact for corporate clients."
+
                 pdf = FPDF()
                 pdf.set_auto_page_break(auto=True, margin=15)
                 
                 for index, row in selected_trainers.iterrows():
                     pdf.add_page()
+                    name = str(row.get('Name', 'Trainer Profile')).encode('latin-1', 'replace').decode('latin-1')
+                    loc = str(row.get('Location', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    exp = str(row.get('Years of Experience', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    topics = str(row.get('Core Subjects/Topics', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+                    gender = str(row.get('Gender', 'Not Specified'))
+                    
+                    # Try to find Photo Column
+                    photo_url = row.get('Upload profile photo', row.get('Photo', ''))
+                    # Try to find Profile Link Column
+                    profile_link = row.get("Trainer's Profile / CV", row.get('Upload CV / Resume', ''))
+                    
+                    img_path = get_drive_image(photo_url, gender, name)
                     
                     # Blue Wisdom Header Bar
                     pdf.set_fill_color(0, 64, 128) # Dark Blue
                     pdf.rect(0, 0, 210, 30, 'F')
                     
+                    # Logo
+                    if logo_path:
+                        pdf.image(logo_path, x=170, y=5, w=30)
+                        
                     pdf.set_font("Arial", 'B', 24)
                     pdf.set_text_color(255, 255, 255)
                     pdf.cell(0, 10, "BLUE WISDOM", ln=1, align="C")
                     pdf.set_font("Arial", '', 10)
                     pdf.set_text_color(138, 180, 248)
                     pdf.cell(0, 5, "EXECUTIVE TRAINER PROFILE", ln=1, align="C")
+                    pdf.ln(15) 
                     
-                    pdf.ln(20) # Space after header
-                    
-                    # Trainer Name
-                    name = str(row.get('Name', 'Trainer Profile')).encode('latin-1', 'replace').decode('latin-1')
-                    pdf.set_font("Arial", 'B', 20)
+                    # Profile Image
+                    if img_path:
+                        pdf.image(img_path, x=15, y=35, w=40, h=40)
+                        
+                    # Name & Title
+                    pdf.set_xy(60, 35)
+                    pdf.set_font("Arial", 'B', 22)
                     pdf.set_text_color(0, 51, 102)
                     pdf.cell(0, 10, name.upper(), ln=1, align="L")
                     
-                    # Location & Experience Subtitle
-                    loc = str(row.get('Location', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
-                    exp = str(row.get('Years of Experience', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
-                    pdf.set_font("Arial", 'I', 12)
-                    pdf.set_text_color(100, 100, 100)
-                    pdf.cell(0, 8, f"Location: {loc}  |  Experience: {exp} Years", ln=1, align="L")
+                    pdf.set_x(60)
+                    pdf.set_font("Arial", 'B', 12)
+                    pdf.set_text_color(80, 80, 80)
+                    pdf.cell(0, 8, "EXECUTIVE TRAINER & CONSULTANT", ln=1, align="L")
                     
-                    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-                    pdf.ln(10)
+                    pdf.set_x(60)
+                    pdf.set_font("Arial", '', 11)
+                    pdf.set_text_color(100, 100, 100)
+                    pdf.cell(0, 6, f"Location: {loc}   |   Experience: {exp} Years", ln=1, align="L")
+                    
+                    pdf.line(10, 80, 200, 80)
+                    pdf.set_y(85)
+                    
+                    # AI Executive Summary
+                    pdf.set_font("Arial", 'B', 14)
+                    pdf.set_text_color(0, 51, 102)
+                    pdf.cell(0, 10, "EXECUTIVE SUMMARY", ln=1)
+                    
+                    ai_summary = generate_ai_summary(name, exp, topics).encode('latin-1', 'replace').decode('latin-1')
+                    pdf.set_font("Arial", '', 11)
+                    pdf.set_text_color(60, 60, 60)
+                    pdf.multi_cell(0, 6, ai_summary)
+                    pdf.ln(8)
                     
                     # Core Expertise Area
                     pdf.set_font("Arial", 'B', 14)
                     pdf.set_text_color(0, 51, 102)
-                    pdf.cell(0, 10, "CORE EXPERTISE & TOPICS:", ln=1)
+                    pdf.cell(0, 10, "CORE EXPERTISE & TRAINING TOPICS", ln=1)
                     
                     pdf.set_font("Arial", '', 11)
                     pdf.set_text_color(50, 50, 50)
-                    topics = str(row.get('Core Subjects/Topics', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
-                    pdf.multi_cell(0, 8, topics)
+                    # Convert commas to bullet points
+                    topic_list = [t.strip() for t in topics.split(',')]
+                    for t in topic_list:
+                        if t: pdf.cell(0, 6, f"  *  {t}", ln=1)
+                    pdf.ln(10)
                     
-                    pdf.ln(15)
+                    # CV Link
+                    if profile_link and str(profile_link).startswith('http'):
+                        pdf.set_font("Arial", 'B', 12)
+                        pdf.set_text_color(0, 102, 204)
+                        pdf.cell(0, 10, "Click Here to View Detailed Profile / CV", link=profile_link, ln=1, align="C")
                     
-                    # Contact placeholder for client
-                    pdf.set_font("Arial", 'I', 10)
+                    pdf.ln(10)
+                    pdf.set_font("Arial", 'I', 9)
                     pdf.set_text_color(150, 150, 150)
                     pdf.cell(0, 10, "To book this trainer, please contact Blue Wisdom Pvt Ltd.", ln=1, align="C")
                     
